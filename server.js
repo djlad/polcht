@@ -1,9 +1,12 @@
 var app = require('express')();
+var expressSession = require('express-session');
 var http = require('http').Server(app);
 var io = require('socket.io')(http);
 var url = require('url');
 var passport = require("passport");
 var LocalStrategy = require("passport-local").Strategy;
+var bodyParser = require("body-parser");
+var cookieParser = require("cookie-parser");
 
 var mongoose = require("mongoose");
 var db = mongoose.connection;
@@ -45,10 +48,11 @@ function updateOtherChatClientsMessages(roomId){
 	
 }
 
+
 //passport uses
 passport.use("login",new LocalStrategy(
   function(username, password, done) {
-    Accounts.findOne({ username: username }, function(err, user) {
+    /*Accounts.findOne({ username: username }, function(err, user) {
       if (err) { return done(err); }
       if (!user) {
         return done(null, false, { message: 'Incorrect username.' });
@@ -57,17 +61,29 @@ passport.use("login",new LocalStrategy(
         return done(null, false, { message: 'Incorrect password.' });
       }
       return done(null, user);
-    });
+    });*/
+
+	if(username === password)return done(null,{id:username,name:username});
+	else{
+		return done(null,null);
+	}
   }
 ));
+passport.serializeUser(function(user,done){
+	done(null,user.id);
+});
+passport.deserializeUser(function(id,done){
+	done(null,{id:id});
+});
 
 passport.use('signup', new LocalStrategy({
     passReqToCallback : true
   },
   function(req, username, password, done) {
+  	console.log("hello");
     findOrCreateUser = function(){
       // find a user in Mongo with provided username
-      User.findOne({'username':username},function(err, user) {
+      User.findOne({username:username},function(err, user) {
         // In case of any error return
         if (err){
           console.log('Error in SignUp: '+err);
@@ -105,24 +121,52 @@ passport.use('signup', new LocalStrategy({
   })
 );
 
+//middleware
+
+//express session
+app.use(expressSession({
+	secret: 'mySecretKey',
+	resave:false,
+	saveUninitialized:false
+}));
+app.use(passport.initialize());
+app.use(passport.session());
+app.use(bodyParser.urlencoded({extended:false}));
+app.use(cookieParser());
 
 
 //routes
+app.get("/",function(req,res){
+	res.sendfile("index.html");
+	console.log(req.user.id);
+	console.log(req.user);
+})
+
+
 app.get("/loginScreen",function(req,res){
 	res.sendfile("loginScreen.html");
+	console.log(req.user);
 })
 
 app.post('/loginScreen',
-	passport.authenticate('login', {
-		successRedirect: '/',
-		failureRedirect: '/loginScreen',
-		failureFlash: true })
+	passport.authenticate('login'),
+	function(req,res){
+		console.log("success "+req.user.name);
+		res.redirect("/");
+
+	}
 );
+app.get("/passwordprotected.html",function(req,res){
+	console.log(req.user);
+	if(req.user.id == "a")res.sendfile("passwordprotected.html");
+})
 
 app.post("/signup",passport.authenticate("signup",{
 	successRedirect:"/",
 	failureRedirect:"/loginScreen"
-}));
+}),function(){
+
+});
 
 io.on('connection', function(socket){
   console.log('a user connected');
